@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>LumaNet — Low-Light Image Enhancement</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
+<style>
+/* ── Reset & Base ────────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0a0a0f;
+  --surface:#111118;
+  --surface2:#18181f;
+  --surface3:#1e1e28;
+  --border:#2a2a38;
+  --border2:#363648;
+  --accent:#c8f54a;
+  --accent2:#a8d93a;
+  --accent-dim:rgba(200,245,74,0.12);
+  --accent-glow:rgba(200,245,74,0.06);
+  --text:#f0f0f5;
+  --text2:#9898aa;
+  --text3:#5c5c70;
+  --danger:#ff5566;
+  --info:#7ab8ff;
+  --radius:12px;
+  --radius-sm:8px;
+  --radius-lg:18px;
+  --font-display:'Syne',sans-serif;
+  --font-body:'DM Sans',sans-serif;
+  --font-mono:'DM Mono',monospace;
+  --transition:0.22s cubic-bezier(0.4,0,0.2,1);
+}
+html{scroll-behavior:smooth;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--font-body);
+  font-size:15px;
+  line-height:1.6;
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* ── Noise overlay ───────────────────────────────────────────────────── */
+body::before{
+  content:'';
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  opacity:0.025;
+}
+
+/* ── Grid background ─────────────────────────────────────────────────── */
+body::after{
+  content:'';
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(200,245,74,0.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(200,245,74,0.03) 1px,transparent 1px);
+  background-size:48px 48px;
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────── */
+.page{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:0 24px;}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+header{
+  padding:32px 0 24px;
+  display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--border);
+}
+.logo{
+  font-family:var(--font-display);
+  font-size:22px;font-weight:800;letter-spacing:-0.5px;
+  display:flex;align-items:center;gap:10px;
+}
+.logo-dot{
+  width:10px;height:10px;border-radius:50%;
+  background:var(--accent);
+  box-shadow:0 0 14px var(--accent);
+  display:inline-block;animation:pulse 2.4s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.6;transform:scale(0.8);}}
+.logo-sub{font-size:11px;font-weight:400;color:var(--text3);font-family:var(--font-mono);letter-spacing:1px;text-transform:uppercase;}
+.badge-device{
+  font-family:var(--font-mono);font-size:11px;
+  background:var(--surface2);border:1px solid var(--border);
+  color:var(--text2);padding:5px 12px;border-radius:20px;
+  display:flex;align-items:center;gap:6px;
+}
+.badge-device::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);}
+
+/* ── Hero ────────────────────────────────────────────────────────────── */
+.hero{padding:64px 0 48px;display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center;}
+.hero-title{
+  font-family:var(--font-display);font-size:52px;font-weight:800;
+  line-height:1.05;letter-spacing:-2px;
+}
+.hero-title span{color:var(--accent);}
+.hero-desc{margin-top:18px;font-size:15px;color:var(--text2);line-height:1.7;font-weight:300;}
+.hero-stats{margin-top:28px;display:flex;gap:28px;}
+.stat{border-left:2px solid var(--border2);padding-left:14px;}
+.stat-num{font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--accent);}
+.stat-label{font-size:11px;color:var(--text3);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.8px;}
+.hero-visual{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+  height:200px;display:flex;align-items:center;justify-content:center;
+  position:relative;overflow:hidden;
+}
+.hero-visual-inner{
+  display:flex;gap:2px;width:100%;height:100%;
+}
+.hero-half{flex:1;height:100%;}
+.hero-half.dark{background:linear-gradient(135deg,#0d0d15 0%,#1a1a25 100%);}
+.hero-half.light{background:linear-gradient(135deg,#2a3a1a 0%,#4a6a28 60%,#7ab040 100%);}
+.hero-divider{
+  position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:2px;height:100%;background:var(--accent);opacity:0.6;
+}
+.hero-label{
+  position:absolute;font-family:var(--font-mono);font-size:10px;
+  background:var(--bg);border:1px solid var(--border);
+  padding:3px 8px;border-radius:4px;color:var(--text2);
+}
+.hero-label.l{left:8px;top:8px;}
+.hero-label.r{right:8px;top:8px;color:var(--accent);}
+
+/* ── Tabs ────────────────────────────────────────────────────────────── */
+.tabs{display:flex;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px;width:fit-content;margin-bottom:24px;}
+.tab{
+  font-family:var(--font-mono);font-size:12px;letter-spacing:0.5px;text-transform:uppercase;
+  padding:8px 20px;border-radius:9px;cursor:pointer;color:var(--text2);
+  transition:var(--transition);border:none;background:transparent;
+}
+.tab.active{background:var(--accent);color:#0a0f00;font-weight:500;}
+.tab:hover:not(.active){background:var(--surface2);color:var(--text);}
+
+/* ── Upload Zone ─────────────────────────────────────────────────────── */
+.upload-zone{
+  border:2px dashed var(--border2);border-radius:var(--radius-lg);
+  padding:48px 24px;text-align:center;cursor:pointer;
+  transition:var(--transition);position:relative;
+  background:var(--surface);
+}
+.upload-zone:hover,.upload-zone.drag{
+  border-color:var(--accent);background:var(--accent-glow);
+}
+.upload-icon{font-size:40px;margin-bottom:12px;opacity:0.5;}
+.upload-title{font-family:var(--font-display);font-size:18px;font-weight:600;margin-bottom:8px;}
+.upload-sub{color:var(--text2);font-size:13px;}
+.upload-btn{
+  margin-top:20px;display:inline-block;
+  background:var(--accent);color:#0a0f00;
+  font-family:var(--font-mono);font-size:12px;font-weight:500;letter-spacing:0.5px;
+  padding:10px 24px;border-radius:8px;cursor:pointer;
+  transition:var(--transition);border:none;
+}
+.upload-btn:hover{background:var(--accent2);}
+#file-input{position:absolute;inset:0;opacity:0;cursor:pointer;}
+
+/* ── Gallery Grid ────────────────────────────────────────────────────── */
+.gallery-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.gallery-title{font-family:var(--font-display);font-size:16px;font-weight:600;}
+.gallery-count{font-family:var(--font-mono);font-size:11px;color:var(--text3);}
+.gallery-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;
+}
+.gallery-item{
+  border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;
+  border:2px solid transparent;transition:var(--transition);
+  position:relative;background:var(--surface2);aspect-ratio:4/3;
+}
+.gallery-item img{width:100%;height:100%;object-fit:cover;display:block;}
+.gallery-item:hover{border-color:var(--border2);transform:translateY(-2px);}
+.gallery-item.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
+.gallery-item .overlay{
+  position:absolute;inset:0;background:rgba(200,245,74,0.08);
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:var(--transition);
+}
+.gallery-item:hover .overlay,.gallery-item.active .overlay{opacity:1;}
+.overlay-check{
+  width:28px;height:28px;background:var(--accent);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;color:#0a0f00;font-weight:700;
+}
+.gallery-item-name{
+  position:absolute;bottom:0;left:0;right:0;
+  background:linear-gradient(transparent,rgba(0,0,0,0.8));
+  padding:12px 6px 5px;font-family:var(--font-mono);font-size:9px;
+  color:rgba(255,255,255,0.7);text-align:center;
+}
+.gallery-loading{
+  grid-column:1/-1;text-align:center;padding:32px;
+  color:var(--text3);font-family:var(--font-mono);font-size:12px;
+}
+.gallery-error{color:var(--danger);}
+
+/* ── Enhance Button ──────────────────────────────────────────────────── */
+.enhance-bar{
+  margin-top:24px;display:flex;align-items:center;gap:16px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px 20px;
+}
+.enhance-selection{flex:1;font-family:var(--font-mono);font-size:12px;color:var(--text2);}
+.enhance-selection strong{color:var(--text);display:block;font-size:13px;margin-bottom:2px;}
+.btn-enhance{
+  background:var(--accent);color:#0a0f00;
+  font-family:var(--font-display);font-size:14px;font-weight:700;
+  padding:12px 28px;border-radius:10px;border:none;cursor:pointer;
+  transition:var(--transition);white-space:nowrap;
+  display:flex;align-items:center;gap:8px;
+}
+.btn-enhance:hover:not(:disabled){background:var(--accent2);transform:translateY(-1px);}
+.btn-enhance:disabled{opacity:0.3;cursor:not-allowed;transform:none;}
+.btn-enhance .spinner{
+  width:14px;height:14px;border:2px solid rgba(0,0,0,0.2);
+  border-top-color:#0a0f00;border-radius:50%;
+  animation:spin 0.7s linear infinite;display:none;
+}
+.btn-enhance.loading .spinner{display:block;}
+.btn-enhance.loading .btn-text{opacity:0.5;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ── Results Panel ───────────────────────────────────────────────────── */
+.results{margin-top:32px;}
+.results-header{
+  font-family:var(--font-display);font-size:22px;font-weight:700;
+  margin-bottom:20px;display:flex;align-items:center;gap:12px;
+}
+.results-badge{
+  font-size:11px;font-family:var(--font-mono);font-weight:400;
+  background:var(--accent-dim);color:var(--accent);
+  border:1px solid rgba(200,245,74,0.3);
+  padding:3px 10px;border-radius:20px;
+}
+
+/* ── Comparison Slider ───────────────────────────────────────────────── */
+.compare-wrap{
+  position:relative;border-radius:var(--radius-lg);overflow:hidden;
+  background:var(--surface2);border:1px solid var(--border);
+  user-select:none;
+  max-width:600px;margin:0 auto 24px;
+}
+.compare-images{position:relative;aspect-ratio:1/1;max-height:480px;}
+.compare-img{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  display:block;
+}
+.compare-img.after{clip-path:inset(0 50% 0 0);}
+.compare-handle{
+  position:absolute;top:0;bottom:0;
+  left:50%;transform:translateX(-50%);
+  width:2px;background:white;cursor:ew-resize;z-index:10;
+  transition:none;
+}
+.compare-handle::before{
+  content:'';position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  width:36px;height:36px;background:white;border-radius:50%;
+  box-shadow:0 2px 12px rgba(0,0,0,0.5);
+  display:flex;align-items:center;justify-content:center;
+}
+.compare-handle::after{
+  content:'◀ ▶';
+  position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  font-size:9px;color:#0a0f00;font-weight:700;
+  width:36px;text-align:center;margin-top:-1px;
+  pointer-events:none;letter-spacing:-1px;
+}
+.compare-label{
+  position:absolute;top:12px;
+  font-family:var(--font-mono);font-size:11px;font-weight:500;
+  background:rgba(0,0,0,0.7);border-radius:5px;padding:4px 10px;
+  backdrop-filter:blur(4px);z-index:8;
+}
+.compare-label.before-lbl{left:12px;color:rgba(255,255,255,0.7);}
+.compare-label.after-lbl{right:12px;color:var(--accent);}
+
+/* Slider below image */
+.slider-control{
+  padding:14px 20px 16px;
+  background:var(--surface);
+  border-top:1px solid var(--border);
+  display:flex;align-items:center;gap:12px;
+}
+.slider-label{font-family:var(--font-mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;}
+#compare-range{
+  flex:1;
+  -webkit-appearance:none;appearance:none;
+  height:3px;border-radius:2px;
+  background:linear-gradient(to right, rgba(200,245,74,0.5) 50%, var(--border2) 50%);
+  outline:none;cursor:ew-resize;
+}
+#compare-range::-webkit-slider-thumb{
+  -webkit-appearance:none;width:18px;height:18px;border-radius:50%;
+  background:white;cursor:ew-resize;
+  box-shadow:0 1px 8px rgba(0,0,0,0.5);
+}
+#compare-range::-moz-range-thumb{
+  width:18px;height:18px;border:none;border-radius:50%;
+  background:white;cursor:ew-resize;
+  box-shadow:0 1px 8px rgba(0,0,0,0.5);
+}
+.slider-pct{font-family:var(--font-mono);font-size:12px;color:var(--accent);min-width:36px;text-align:right;}
+
+/* ── Side-by-side + Reference ────────────────────────────────────────── */
+.results-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:8px;}
+.result-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);overflow:hidden;
+}
+.result-card img{width:100%;display:block;aspect-ratio:1/1;object-fit:cover;}
+.result-card-footer{
+  padding:10px 14px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.result-card-name{font-family:var(--font-mono);font-size:11px;color:var(--text2);}
+.result-card-badge{
+  font-family:var(--font-mono);font-size:10px;
+  padding:3px 8px;border-radius:4px;
+}
+.badge-dark{background:rgba(255,85,102,0.15);color:#ff8899;}
+.badge-enhanced{background:var(--accent-dim);color:var(--accent);}
+.badge-ref{background:rgba(122,184,255,0.15);color:var(--info);}
+
+/* ── Download ────────────────────────────────────────────────────────── */
+.download-row{
+  margin-top:16px;display:flex;gap:10px;justify-content:center;
+}
+.btn-dl{
+  font-family:var(--font-mono);font-size:12px;
+  padding:10px 20px;border-radius:8px;border:1px solid var(--border2);
+  background:var(--surface2);color:var(--text);cursor:pointer;
+  transition:var(--transition);text-decoration:none;display:inline-flex;align-items:center;gap:6px;
+}
+.btn-dl:hover{border-color:var(--accent);color:var(--accent);}
+.btn-dl-primary{background:var(--accent);color:#0a0f00;border-color:var(--accent);}
+.btn-dl-primary:hover{background:var(--accent2);color:#0a0f00;}
+
+/* ── Metrics ─────────────────────────────────────────────────────────── */
+.metrics-row{
+  display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;
+}
+.metric-chip{
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:8px;padding:10px 16px;
+  display:flex;flex-direction:column;gap:2px;min-width:100px;
+}
+.metric-val{font-family:var(--font-display);font-size:20px;font-weight:700;color:var(--accent);}
+.metric-label{font-family:var(--font-mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;}
+
+/* ── Empty / Error states ────────────────────────────────────────────── */
+.empty-state{
+  text-align:center;padding:64px 24px;
+  border:1px solid var(--border);border-radius:var(--radius-lg);
+  background:var(--surface);
+}
+.empty-icon{font-size:48px;margin-bottom:12px;opacity:0.25;}
+.empty-title{font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--text2);}
+.empty-sub{font-size:13px;color:var(--text3);margin-top:6px;}
+
+/* ── Toast ───────────────────────────────────────────────────────────── */
+#toast{
+  position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);
+  background:var(--surface);border:1px solid var(--border2);
+  border-radius:10px;padding:12px 20px;font-family:var(--font-mono);font-size:12px;
+  color:var(--text);z-index:999;
+  transition:transform 0.3s cubic-bezier(0.4,0,0.2,1);
+  pointer-events:none;white-space:nowrap;
+}
+#toast.show{transform:translateX(-50%) translateY(0);}
+#toast.success{border-color:var(--accent);color:var(--accent);}
+#toast.error{border-color:var(--danger);color:var(--danger);}
+
+/* ── Section divider ─────────────────────────────────────────────────── */
+.section{padding:40px 0;}
+.section-label{
+  font-family:var(--font-mono);font-size:10px;color:var(--text3);
+  text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;
+  display:flex;align-items:center;gap:8px;
+}
+.section-label::before{content:'';width:20px;height:1px;background:var(--border2);}
+
+/* ── Footer ──────────────────────────────────────────────────────────── */
+footer{
+  border-top:1px solid var(--border);padding:24px 0;
+  display:flex;align-items:center;justify-content:space-between;
+  font-family:var(--font-mono);font-size:11px;color:var(--text3);
+}
+
+/* ── Animations ──────────────────────────────────────────────────────── */
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(16px);}
+  to{opacity:1;transform:translateY(0);}
+}
+.fade-up{animation:fadeUp 0.5s ease both;}
+.fade-up-1{animation-delay:0.05s;}
+.fade-up-2{animation-delay:0.1s;}
+.fade-up-3{animation-delay:0.15s;}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+@media(max-width:768px){
+  .hero{grid-template-columns:1fr;gap:24px;}
+  .hero-title{font-size:36px;}
+  .hero-visual{display:none;}
+  .results-grid{grid-template-columns:1fr 1fr;}
+}
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- Header -->
+  <header>
+    <div>
+      <div class="logo">
+        <span class="logo-dot"></span>
+        LumaNet
+      </div>
+      <div class="logo-sub">Retinex · Deep Enhancement</div>
+    </div>
+    <div class="badge-device" id="device-badge">Checking device...</div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero fade-up">
+    <div>
+      <h1 class="hero-title">Reveal what<br/>darkness<br/><span>hides.</span></h1>
+      <p class="hero-desc">
+        CNN-based Retinex enhancement that decomposes images into
+        Reflectance × Illumination, then boosts the illumination
+        to recover lost detail.
+      </p>
+      <div class="hero-stats">
+        <div class="stat">
+          <div class="stat-num">256²</div>
+          <div class="stat-label">input size</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num">MSE</div>
+          <div class="stat-label">loss fn</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num">R×I</div>
+          <div class="stat-label">retinex</div>
+        </div>
+      </div>
+    </div>
+    <div class="hero-visual fade-up fade-up-2">
+      <div class="hero-visual-inner">
+        <div class="hero-half dark"></div>
+        <div class="hero-half light"></div>
+      </div>
+      <div class="hero-divider"></div>
+      <div class="hero-label l">dark input</div>
+      <div class="hero-label r">enhanced ✦</div>
+    </div>
+  </section>
+
+  <!-- Main Tabs -->
+  <section class="section fade-up fade-up-3">
+    <div class="section-label">Enhancement Mode</div>
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('upload')">Upload Image</button>
+      <button class="tab" onclick="switchTab('gallery')">LOL Dataset</button>
+    </div>
+
+    <!-- Upload Panel -->
+    <div id="panel-upload">
+      <div class="upload-zone" id="drop-zone">
+        <input type="file" id="file-input" accept="image/*"/>
+        <div class="upload-icon">⬆</div>
+        <div class="upload-title">Drop your dark image here</div>
+        <div class="upload-sub">PNG, JPG, JPEG supported · any size</div>
+        <button class="upload-btn" onclick="document.getElementById('file-input').click()">
+          Choose File
+        </button>
+      </div>
+      <div class="enhance-bar" style="margin-top:16px;">
+        <div class="enhance-selection">
+          <strong id="upload-filename">No file selected</strong>
+          <span>Select an image above to enhance it</span>
+        </div>
+        <button class="btn-enhance" id="btn-upload-enhance" disabled onclick="runUploadEnhance()">
+          <span class="spinner"></span>
+          <span class="btn-text">✦ Enhance</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Gallery Panel -->
+    <div id="panel-gallery" style="display:none;">
+      <div class="gallery-header">
+        <span class="gallery-title">LOL Test Dataset</span>
+        <span class="gallery-count" id="gallery-count">loading...</span>
+      </div>
+      <div class="gallery-grid" id="gallery-grid">
+        <div class="gallery-loading">Loading images from dataset/test/low/...</div>
+      </div>
+      <div class="enhance-bar">
+        <div class="enhance-selection">
+          <strong id="gallery-selected-name">No image selected</strong>
+          <span>Click an image above to select it</span>
+        </div>
+        <button class="btn-enhance" id="btn-gallery-enhance" disabled onclick="runGalleryEnhance()">
+          <span class="spinner"></span>
+          <span class="btn-text">✦ Enhance</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Results -->
+  <section class="section" id="results-section" style="display:none;">
+    <div class="section-label">Results</div>
+    <div class="results-header">
+      Enhancement Output
+      <span class="results-badge" id="results-badge">RetinexNet</span>
+    </div>
+
+    <!-- Compare Slider -->
+    <div class="compare-wrap" id="compare-wrap">
+      <div class="compare-images" id="compare-images">
+        <img class="compare-img before-img" id="img-before" src="" alt="Original"/>
+        <img class="compare-img after after-img" id="img-after" src="" alt="Enhanced"/>
+        <div class="compare-handle" id="compare-handle"></div>
+        <!-- <div class="compare-label before-lbl">Before</div>
+        <div class="compare-label after-lbl">After ✦</div> -->
+      </div>
+      <div class="slider-control">
+        <span class="slider-label">
+          <!--Before-->
+        </span>
+        <input type="range" id="compare-range" min="0" max="100" value="50"/>
+        <span class="slider-label"><!--After--></span>
+        <span class="slider-pct" id="slider-pct">50%</span>
+      </div>
+    </div>
+
+    <!-- Metrics -->
+    <div class="metrics-row" id="metrics-row"></div>
+
+    <!-- Side by side cards -->
+    <div class="results-grid" id="results-grid"></div>
+
+    <!-- Downloads -->
+    <div class="download-row" id="download-row"></div>
+  </section>
+
+</div>
+
+<!-- Footer -->
+<div class="page">
+  <footer>
+    <span>LumaNet · DIP Project · RetinexNet</span>
+    <span>Low-Light Enhancement via CNN</span>
+  </footer>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────
+let uploadedFile       = null;
+let uploadedB64        = null;
+let selectedGallery    = null;
+let currentOriginalB64 = null;
+let currentEnhancedB64 = null;
+
+// ── Toast ─────────────────────────────────────────────────────────────
+function showToast(msg, type='info', duration=2800){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  setTimeout(()=>{ t.className = ''; }, duration);
+}
+
+// ── Device badge ──────────────────────────────────────────────────────
+async function checkDevice(){
+  try{
+    const r = await fetch('/api/gallery');
+    // If we got a response, server is up
+    document.getElementById('device-badge').textContent = '● Server online';
+  } catch(e){
+    document.getElementById('device-badge').textContent = '✕ Server offline';
+    document.getElementById('device-badge').style.color = '#ff5566';
+  }
+}
+checkDevice();
+
+// ── Tab switching ─────────────────────────────────────────────────────
+function switchTab(tab){
+  document.querySelectorAll('.tab').forEach((el,i)=>{
+    el.classList.toggle('active', (tab==='upload'&&i===0)||(tab==='gallery'&&i===1));
+  });
+  document.getElementById('panel-upload').style.display  = tab==='upload'  ? '' : 'none';
+  document.getElementById('panel-gallery').style.display = tab==='gallery' ? '' : 'none';
+  if(tab==='gallery') loadGallery();
+}
+
+// ── Upload logic ──────────────────────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e=>{ e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', ()=> dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e=>{
+  e.preventDefault(); dropZone.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if(f) handleFileSelect(f);
+});
+fileInput.addEventListener('change', ()=>{
+  if(fileInput.files[0]) handleFileSelect(fileInput.files[0]);
+});
+
+function handleFileSelect(file){
+  if(!file.type.startsWith('image/')){
+    showToast('Please select an image file', 'error'); return;
+  }
+  uploadedFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    uploadedB64 = e.target.result.split(',')[1];
+    document.getElementById('upload-filename').textContent = file.name;
+    document.getElementById('btn-upload-enhance').disabled = false;
+    showToast('Image ready — click Enhance', 'success');
+  };
+  reader.readAsDataURL(file);
+}
+
+async function runUploadEnhance(){
+  if(!uploadedB64) return;
+  const btn = document.getElementById('btn-upload-enhance');
+  btn.disabled = true; btn.classList.add('loading');
+  try{
+    const res  = await fetch('/api/enhance/upload', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({image: uploadedB64})
+    });
+    const data = await res.json();
+    if(data.error){ showToast(data.error,'error'); return; }
+    showResults(data.original, data.enhanced, null, uploadedFile.name);
+  } catch(e){
+    showToast('Enhancement failed — is the server running?','error');
+  } finally {
+    btn.disabled=false; btn.classList.remove('loading');
+  }
+}
+
+// ── Gallery logic ─────────────────────────────────────────────────────
+let galleryLoaded = false;
+
+async function loadGallery(){
+  if(galleryLoaded) return;
+  const grid = document.getElementById('gallery-grid');
+  try{
+    const res   = await fetch('/api/gallery');
+    const items = await res.json();
+    if(items.error){ grid.innerHTML=`<div class="gallery-loading gallery-error">Error: ${items.error}</div>`; return; }
+    document.getElementById('gallery-count').textContent = items.length + ' images';
+    grid.innerHTML = '';
+    items.forEach(item=>{
+      const div = document.createElement('div');
+      div.className = 'gallery-item';
+      div.dataset.name = item.name;
+      div.innerHTML = `
+        <img src="data:image/png;base64,${item.thumb}" alt="${item.name}" loading="lazy"/>
+        <div class="overlay"><div class="overlay-check">✓</div></div>
+        <div class="gallery-item-name">${item.name}</div>
+      `;
+      div.addEventListener('click', ()=> selectGalleryItem(div, item.name));
+      grid.appendChild(div);
+    });
+    galleryLoaded = true;
+  } catch(e){
+    grid.innerHTML = `<div class="gallery-loading gallery-error">Cannot reach server. Run python app.py first.</div>`;
+  }
+}
+
+function selectGalleryItem(el, name){
+  document.querySelectorAll('.gallery-item').forEach(i=>i.classList.remove('active'));
+  el.classList.add('active');
+  selectedGallery = name;
+  document.getElementById('gallery-selected-name').textContent = name;
+  document.getElementById('btn-gallery-enhance').disabled = false;
+}
+
+async function runGalleryEnhance(){
+  if(!selectedGallery) return;
+  const btn = document.getElementById('btn-gallery-enhance');
+  btn.disabled=true; btn.classList.add('loading');
+  try{
+    const res  = await fetch('/api/enhance/gallery/'+encodeURIComponent(selectedGallery));
+    const data = await res.json();
+    if(data.error){ showToast(data.error,'error'); return; }
+    showResults(data.original, data.enhanced, data.reference, selectedGallery);
+  } catch(e){
+    showToast('Enhancement failed','error');
+  } finally {
+    btn.disabled=false; btn.classList.remove('loading');
+  }
+}
+
+// ── Show Results ──────────────────────────────────────────────────────
+function showResults(originalB64, enhancedB64, referenceB64, filename){
+  currentOriginalB64 = originalB64;
+  currentEnhancedB64 = enhancedB64;
+
+  // Scroll to results
+  const sec = document.getElementById('results-section');
+  sec.style.display = '';
+  sec.scrollIntoView({behavior:'smooth', block:'start'});
+
+  // Badge
+  document.getElementById('results-badge').textContent = filename || 'RetinexNet';
+
+  // Comparison slider
+  const before = document.getElementById('img-before');
+  const after  = document.getElementById('img-after');
+  before.src = 'data:image/png;base64,' + originalB64;
+  after.src  = 'data:image/png;base64,' + enhancedB64;
+  setSliderPos(50);
+  document.getElementById('compare-range').value = 50;
+
+  // Metrics (computed from pixel data)
+  computeMetrics(originalB64, enhancedB64);
+
+  // Side-by-side cards
+  const grid = document.getElementById('results-grid');
+  grid.innerHTML = `
+    <div class="result-card fade-up">
+      <img src="data:image/png;base64,${originalB64}" alt="Original"/>
+      <div class="result-card-footer">
+        <span class="result-card-name">original</span>
+        <span class="result-card-badge badge-dark">dark</span>
+      </div>
+    </div>
+    <div class="result-card fade-up fade-up-1">
+      <img src="data:image/png;base64,${enhancedB64}" alt="Enhanced"/>
+      <div class="result-card-footer">
+        <span class="result-card-name">enhanced</span>
+        <span class="result-card-badge badge-enhanced">✦ retinex</span>
+      </div>
+    </div>
+    ${referenceB64 ? `
+    <div class="result-card fade-up fade-up-2">
+      <img src="data:image/png;base64,${referenceB64}" alt="Reference"/>
+      <div class="result-card-footer">
+        <span class="result-card-name">ground truth</span>
+        <span class="result-card-badge badge-ref">reference</span>
+      </div>
+    </div>` : ''}
+  `;
+
+  // Downloads
+  document.getElementById('download-row').innerHTML = `
+    <a class="btn-dl btn-dl-primary" href="data:image/png;base64,${enhancedB64}" download="enhanced_${filename||'result'}.png">
+      ↓ Download Enhanced
+    </a>
+    <a class="btn-dl" href="data:image/png;base64,${originalB64}" download="original_${filename||'input'}.png">
+      ↓ Download Original
+    </a>
+  `;
+
+  showToast('Enhancement complete ✦', 'success');
+}
+
+// ── Comparison Slider ─────────────────────────────────────────────────
+function setSliderPos(pct){
+  const after  = document.getElementById('img-after');
+  const handle = document.getElementById('compare-handle');
+  const range  = document.getElementById('compare-range');
+  // clip from left: show pct% of after image
+  const rev = 100 - pct; // inset right = how much of after is hidden
+  after.style.clipPath  = `inset(0 ${rev}% 0 0)`;
+  handle.style.left     = pct + '%';
+  document.getElementById('slider-pct').textContent = Math.round(pct) + '%';
+  // update range gradient
+  range.style.background = `linear-gradient(to right, rgba(200,245,74,0.5) ${pct}%, #2a2a38 ${pct}%)`;
+}
+
+// Range input
+document.getElementById('compare-range').addEventListener('input', function(){
+  setSliderPos(parseFloat(this.value));
+});
+
+// Drag handle directly on image
+(function(){
+  const wrap   = document.getElementById('compare-images');
+  const handle = document.getElementById('compare-handle');
+  let dragging = false;
+
+  function onMove(e){
+    if(!dragging) return;
+    const rect = wrap.getBoundingClientRect();
+    const x    = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const pct  = Math.max(0, Math.min(100, (x / rect.width) * 100));
+    setSliderPos(pct);
+    document.getElementById('compare-range').value = pct;
+  }
+
+  handle.addEventListener('mousedown',  ()=> dragging=true);
+  handle.addEventListener('touchstart', ()=> dragging=true, {passive:true});
+  document.addEventListener('mouseup',  ()=> dragging=false);
+  document.addEventListener('touchend', ()=> dragging=false);
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('touchmove', onMove, {passive:true});
+
+  // click on image to jump
+  wrap.addEventListener('click', e=>{
+    const rect = wrap.getBoundingClientRect();
+    const pct  = ((e.clientX - rect.left) / rect.width) * 100;
+    setSliderPos(pct);
+    document.getElementById('compare-range').value = pct;
+  });
+})();
+
+// ── Pixel Metrics ─────────────────────────────────────────────────────
+function computeMetrics(origB64, enhB64){
+  const row = document.getElementById('metrics-row');
+  row.innerHTML = '<div class="metric-chip"><div class="metric-val">...</div><div class="metric-label">computing</div></div>';
+
+  // Load both onto canvases
+  const c1 = document.createElement('canvas');
+  const c2 = document.createElement('canvas');
+  const img1 = new Image(), img2 = new Image();
+  let loaded = 0;
+
+  function tryCompute(){
+    if(++loaded < 2) return;
+    c1.width  = c2.width  = img1.width;
+    c1.height = c2.height = img1.height;
+    c1.getContext('2d').drawImage(img1, 0, 0);
+    c2.getContext('2d').drawImage(img2, 0, 0);
+    const d1 = c1.getContext('2d').getImageData(0,0,c1.width,c1.height).data;
+    const d2 = c2.getContext('2d').getImageData(0,0,c2.width,c2.height).data;
+
+    let sumOrig=0, sumEnh=0, n=0;
+    for(let i=0;i<d1.length;i+=4){
+      const lo = (d1[i]+d1[i+1]+d1[i+2])/3;
+      const le = (d2[i]+d2[i+1]+d2[i+2])/3;
+      sumOrig += lo; sumEnh += le; n++;
+    }
+    const avgOrig  = sumOrig / n;
+    const avgEnh   = sumEnh  / n;
+    const brighten = ((avgEnh - avgOrig) / 255 * 100).toFixed(1);
+
+    // Simple contrast (std dev)
+    let varO=0, varE=0;
+    for(let i=0;i<d1.length;i+=4){
+      const lo = (d1[i]+d1[i+1]+d1[i+2])/3;
+      const le = (d2[i]+d2[i+1]+d2[i+2])/3;
+      varO += (lo-avgOrig)**2;
+      varE += (le-avgEnh)**2;
+    }
+    const stdO = Math.sqrt(varO/n).toFixed(1);
+    const stdE = Math.sqrt(varE/n).toFixed(1);
+
+    row.innerHTML = `
+      <div class="metric-chip">
+        <div class="metric-val">${avgOrig.toFixed(0)}</div>
+        <div class="metric-label">orig brightness</div>
+      </div>
+      <div class="metric-chip">
+        <div class="metric-val">${avgEnh.toFixed(0)}</div>
+        <div class="metric-label">enh brightness</div>
+      </div>
+      <div class="metric-chip">
+        <div class="metric-val">+${brighten > 0 ? brighten : '—'}%</div>
+        <div class="metric-label">brightness gain</div>
+      </div>
+      <div class="metric-chip">
+        <div class="metric-val">${stdO}</div>
+        <div class="metric-label">orig contrast</div>
+      </div>
+      <div class="metric-chip">
+        <div class="metric-val">${stdE}</div>
+        <div class="metric-label">enh contrast</div>
+      </div>
+    `;
+  }
+
+  img1.onload = tryCompute;
+  img2.onload = tryCompute;
+  img1.src = 'data:image/png;base64,' + origB64;
+  img2.src = 'data:image/png;base64,' + enhB64;
+}
+</script>
+</body>
+</html>
