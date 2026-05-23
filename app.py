@@ -129,6 +129,6 @@ def enhance_upload():
 
 
 if __name__ == "__main__":
-    os.makedirs("static", exist_ok=True)
-    print("\n  Open http://localhost:5000 in your browser\n")
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT",5000))
+    # print("\n  Open http://localhost:5000 in your browser\n")
+    app.run(debug=True, host="0.0.0.0", port=port)
